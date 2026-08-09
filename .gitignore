@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Databricks Apps build artifact
 /.appbuild/
+
+# Private draft, never commit
+EMAIL-DRAFT.md
