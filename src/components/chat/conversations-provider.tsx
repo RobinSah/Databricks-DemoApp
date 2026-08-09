@@ -68,8 +68,11 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
   const lastSavedRef = useRef<string>("");
 
   // Load the sidebar list and remembered active id immediately on mount —
-  // this is pure UI state with no dependency on the agent connection.
+  // pure UI state with no dependency on the agent connection. localStorage
+  // must be read after hydration (the server renders an empty list), so the
+  // sync setState here is the intended pattern, not an accident.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConversations(listConversations());
     setActiveId(getActiveConversationId());
   }, []);
