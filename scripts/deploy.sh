@@ -51,7 +51,24 @@ echo "==> Ensuring app resource exists (bundle)"
 databricks bundle deploy
 
 echo "==> Syncing build artifact to ${WORKSPACE_SRC}"
-databricks sync .appbuild "$WORKSPACE_SRC" --full
+# Notes from the trenches:
+# - sync applies the repo's .gitignore even to an ignored artifact dir, so
+#   run it from inside .appbuild with an explicit include-all.
+# - the workspace-files API drops connections under ~2k rapid uploads;
+#   sync is incremental, so retry until it converges.
+synced=""
+for attempt in 1 2 3 4 5 6 7 8; do
+  echo "--- sync attempt ${attempt} ---"
+  if (cd .appbuild && databricks sync . "$WORKSPACE_SRC" --full --include '**'); then
+    synced="yes"
+    break
+  fi
+  sleep 15
+done
+if [ -z "$synced" ]; then
+  echo "ERROR: sync did not converge after 8 attempts"
+  exit 1
+fi
 
 echo "==> Starting app compute (no-op if already running)"
 databricks apps start "$APP_NAME" || true
