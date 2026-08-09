@@ -67,17 +67,20 @@ echo "==> Syncing build artifact to ${WORKSPACE_SRC}"
 #   run it from inside .appbuild with an explicit include-all.
 # - the workspace-files API drops connections under ~2k rapid uploads;
 #   sync is incremental, so retry until it converges.
+# Sync is incremental, so every attempt makes forward progress even when
+# the API drops the connection; 25 attempts with backoff has converged on
+# builds ~800 files large. Tune upward before assuming a real failure.
 synced=""
-for attempt in 1 2 3 4 5 6 7 8; do
+for attempt in $(seq 1 25); do
   echo "--- sync attempt ${attempt} ---"
   if (cd .appbuild && databricks sync . "$WORKSPACE_SRC" --full --include '**'); then
     synced="yes"
     break
   fi
-  sleep 15
+  sleep 20
 done
 if [ -z "$synced" ]; then
-  echo "ERROR: sync did not converge after 8 attempts"
+  echo "ERROR: sync did not converge after 25 attempts"
   exit 1
 fi
 
