@@ -55,7 +55,11 @@ if [ -n "$oversized" ]; then
 fi
 
 echo "==> Ensuring app resource exists (bundle)"
-databricks bundle deploy
+# Best-effort: re-reading bundle state requires the all-apis token scope,
+# which scoped PATs lack. The app resource (and its serving-endpoint
+# grant) only needs to be created once, so a failure here is fine as long
+# as the app already exists.
+databricks bundle deploy || databricks apps get "$APP_NAME" >/dev/null
 
 echo "==> Syncing build artifact to ${WORKSPACE_SRC}"
 # Notes from the trenches:

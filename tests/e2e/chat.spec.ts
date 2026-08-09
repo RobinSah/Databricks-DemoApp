@@ -11,6 +11,14 @@ import { gdpIndiaFixture, lifeExpectancyComparisonFixture } from "./fixtures/gdp
 
 const SERIES_ROUTE = "**/api/worldbank/series*";
 
+// These flows are scripted against the deterministic mock LLM
+// (LLM_PROVIDER=mock). A deployed app runs the real model, whose replies
+// aren't assertable verbatim — the smoke and API suites cover live runs.
+test.skip(
+  !!process.env.E2E_BASE_URL,
+  "chat flows require the mock LLM; not applicable to live deployments",
+);
+
 async function sendMessage(page: Page, text: string) {
   const input = page.getByRole("textbox");
   await input.click();

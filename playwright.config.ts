@@ -28,6 +28,11 @@ export default defineConfig({
     baseURL: externalBaseUrl ?? `http://127.0.0.1:${PORT}`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // Databricks Apps URLs are SSO-gated; supply an OAuth token for
+    // programmatic runs: E2E_BEARER_TOKEN=$(databricks auth token | jq -r .access_token)
+    ...(process.env.E2E_BEARER_TOKEN
+      ? { extraHTTPHeaders: { Authorization: `Bearer ${process.env.E2E_BEARER_TOKEN}` } }
+      : {}),
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: externalBaseUrl
