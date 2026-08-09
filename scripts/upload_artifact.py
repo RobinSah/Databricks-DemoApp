@@ -29,6 +29,28 @@ def die(message: str) -> None:
     sys.exit(1)
 
 
+def api_post_json(host: str, token: str, endpoint: str, payload: dict) -> None:
+    import json
+
+    request = urllib.request.Request(
+        f"{host}{endpoint}",
+        data=json.dumps(payload).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    last_error: Exception | None = None
+    for attempt in range(1, RETRIES_PER_FILE + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+                if response.status == 200:
+                    return
+                last_error = RuntimeError(f"HTTP {response.status}")
+        except Exception as error:  # noqa: BLE001
+            last_error = error
+        time.sleep(2 * attempt)
+    raise RuntimeError(f"{endpoint} {payload}: {last_error}")
+
+
 def upload_file(host: str, token: str, local_path: str, workspace_path: str) -> None:
     encoded = urllib.parse.quote(workspace_path, safe="")
     url = f"{host}/api/2.0/workspace-files/import-file/{encoded}?overwrite=true"
@@ -64,12 +86,27 @@ def main() -> None:
         host = f"https://{host}"
 
     files: list[str] = []
-    for dirpath, _dirnames, filenames in os.walk(local_root):
+    for dirpath, dirnames, filenames in os.walk(local_root):
+        # .databricks is sync-CLI bookkeeping (the API 400s on the reserved
+        # name anyway); .DS_Store is Finder noise.
+        dirnames[:] = [d for d in dirnames if d != ".databricks"]
         for name in filenames:
+            if name == ".DS_Store":
+                continue
             files.append(os.path.join(dirpath, name))
     files.sort()
     total = len(files)
     print(f"Uploading {total} files to {workspace_root} (sequential)")
+
+    # import-file does not auto-create parent folders (HTTP 400), so build
+    # the directory tree first. mkdirs is recursive; creating the deepest
+    # paths covers the intermediates.
+    directories = {os.path.dirname(os.path.relpath(f, local_root)) for f in files}
+    directories.discard("")
+    leaf_dirs = [d for d in directories if not any(o != d and o.startswith(d + "/") for o in directories)]
+    print(f"Creating {len(leaf_dirs)} directories")
+    for directory in sorted(leaf_dirs):
+        api_post_json(host, token, "/api/2.0/workspace/mkdirs", {"path": f"{workspace_root}/{directory}"})
 
     started = time.time()
     for index, path in enumerate(files, start=1):
