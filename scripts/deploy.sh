@@ -61,28 +61,16 @@ echo "==> Ensuring app resource exists (bundle)"
 # as the app already exists.
 databricks bundle deploy || databricks apps get "$APP_NAME" >/dev/null
 
-echo "==> Syncing build artifact to ${WORKSPACE_SRC}"
-# Notes from the trenches:
-# - sync applies the repo's .gitignore even to an ignored artifact dir, so
-#   run it from inside .appbuild with an explicit include-all.
-# - the workspace-files API drops connections under ~2k rapid uploads;
-#   sync is incremental, so retry until it converges.
-# Sync is incremental, so every attempt makes forward progress even when
-# the API drops the connection; 25 attempts with backoff has converged on
-# builds ~800 files large. Tune upward before assuming a real failure.
-synced=""
-for attempt in $(seq 1 25); do
-  echo "--- sync attempt ${attempt} ---"
-  if (cd .appbuild && databricks sync . "$WORKSPACE_SRC" --full --include '**'); then
-    synced="yes"
-    break
-  fi
-  sleep 20
-done
-if [ -z "$synced" ]; then
-  echo "ERROR: sync did not converge after 25 attempts"
-  exit 1
-fi
+echo "==> Uploading build artifact to ${WORKSPACE_SRC}"
+# Not `databricks sync`: its concurrent uploads get their connections
+# dropped by the Free Edition workspace-files API (unexpected EOF /
+# inactivity stalls on random small files; 25 retry passes never
+# converged). Sequential uploads measure ~250 ms each with a 100%
+# success rate, so the uploader does exactly that. Start from a clean
+# remote dir so stale content-hashed chunks from prior builds don't
+# linger in the deployed snapshot.
+databricks workspace delete "$WORKSPACE_SRC" --recursive 2>/dev/null || true
+python3 scripts/upload_artifact.py .appbuild "$WORKSPACE_SRC"
 
 echo "==> Starting app compute (no-op if already running)"
 databricks apps start "$APP_NAME" || true
