@@ -1,6 +1,6 @@
 # Atlas — Global Development Insights
 
-An AI chatbot that answers questions about world development with **live World Bank data**, rendered as charts inside the conversation. Ask *"Compare GDP per capita of India and Brazil since 2000"* and the model calls a typed frontend tool, fetches real indicator data, draws the chart, and summarizes the trend it actually received — it never invents numbers.
+An AI chatbot that answers questions about world development with **live World Bank data**, rendered as charts inside the conversation. Ask *"Compare GDP per capita of India and Brazil since 2000"* and the model calls a typed frontend tool, fetches real indicator data, draws the chart, and summarizes the trend from the series it actually received. Charted figures always come from the API rather than the model's memory — with one known exception when a tool returns no data, documented under [Known limitations](#known-limitations).
 
 Deployed as a **Databricks App**, powered by **Databricks Foundation Model APIs** (Llama 3.3 70B), with a fully deterministic **Playwright** E2E suite.
 
@@ -134,6 +134,24 @@ databricks apps start atlas-insights
 - **Accessibility pass**: axe-core assertions in the E2E suite beyond the current lang/role/label checks.
 
 ## Known limitations
+
+Reviewed against the [OWASP Top 10 for LLM Applications (2025)](https://genai.owasp.org/llm-top-10/). The findings below are open, with the reasoning for leaving them open rather than patching them late.
+
+**Model falls back on recall when a tool returns nothing (LLM09, Misinformation).** Asking for a future year — "highest GDP countries in 2026" — returns zero rows, because World Bank annual data currently ends at 2025. The chart correctly shows "no data available", but the model then recites GDP figures from memory instead of retrying with a valid range. The system prompt forbids inventing values; the model does it anyway on the empty-result path. The fix is a prompt that states the data boundary plus a tool error that instructs a retry, not a code change.
+
+**Search results are not segregated from instructions (LLM01, Indirect Prompt Injection).** Results are passed back to the model as tool output with no delimiting or untrusted-content labeling. The default provider is Wikipedia, which anyone can edit, so injected text in an article body reaches the model's context. OWASP's mitigation — segregating external content so untrusted data cannot influence instructions — is not implemented.
+
+**Result URLs are rendered without scheme validation (LLM05, Improper Output Handling).** `SourcesCard` puts the provider-supplied URL straight into an `href`. Wikipedia only ever returns `https:` URLs, so this is latent today, but the optional Tavily provider returns arbitrary web URLs and a `javascript:` scheme would not be rejected.
+
+**No rate limiting on the API routes (LLM10, Unbounded Consumption).** `/api/copilotkit`, `/api/search`, and `/api/worldbank/series` each proxy to a paid or third-party endpoint with no throttle. The compensating control is that Databricks Apps gates every route behind workspace SSO, so there is no anonymous access — adequate for a demo, not for a public deployment.
+
+**Streaming drops follow-up tool calls made after prose (platform limitation).** When Llama 3.3 writes a sentence and then issues another tool call in the same message, the Databricks serving endpoint's streaming parser fails to extract it and emits the raw `<function=…>` syntax as chat text, so the second call never runs. Reproduced against the live endpoint: identical request and messages, non-streaming returns proper structured `tool_calls`, streaming leaks the syntax. Recovering these would mean parsing the leaked syntax out of the stream and re-dispatching it.
+
+**Charts are time series only.** The chart component renders lines; "give me a bar chart" or "rank the top N countries" has no matching tool, and the model is not told which chart types exist, so it improvises instead of declining.
+
+**Dependencies carry known advisories (LLM03, Supply Chain).** `npm audit` reports 13 vulnerabilities in production dependencies (1 high: `undici` unbounded decompression), all transitive through CopilotKit's AI SDK packages. No automated scanning runs on push.
+
+**Testing is integration-level only.** All 17 Playwright specs run end-to-end against a scripted mock LLM. That makes them fast, free, and deterministic, and it thoroughly covers this application's code — but it exercises no real model behavior, which is why the two model-behavior defects above reached the deployed app with a green suite. There are no unit tests for the data layer's parsing and partial-failure paths, and no CI runs the suite.
 
 - Tool-call results return full time series to the model for summarization; for long ranges × many countries this spends tokens. A summary-stats-only variant would be cheaper but the chart needs the full series anyway.
 - The World Bank API occasionally lags a year behind for some indicators; the chart footer names countries with no data rather than hiding them.
