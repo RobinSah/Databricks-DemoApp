@@ -1,0 +1,39 @@
+# Databricks Asset Bundle definition.
+# Deploy with: ./scripts/deploy.sh  (builds, assembles .appbuild, deploys, starts)
+bundle:
+  name: atlas-insights
+
+# The bundle declares the app resource (and its serving-endpoint grant).
+# App code is synced separately by scripts/deploy.sh — keep bundle file
+# sync minimal.
+sync:
+  exclude:
+    - "**"
+
+resources:
+  apps:
+    atlas:
+      name: atlas-insights
+      description: "AI chatbot charting World Bank development data, powered by Foundation Model APIs"
+      source_code_path: ./.appbuild
+      config:
+        command:
+          - sh
+          - -c
+          - PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 node server.js
+        env:
+          - name: DATABRICKS_SERVING_ENDPOINT
+            value_from: serving-endpoint
+          - name: NODE_ENV
+            value: production
+      resources:
+        - name: serving-endpoint
+          serving_endpoint:
+            name: databricks-meta-llama-3-3-70b-instruct
+            permission: CAN_QUERY
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://dbc-1eaaf511-31ce.cloud.databricks.com

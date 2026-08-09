@@ -45,3 +45,6 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 !.env.example
+
+# Databricks Apps build artifact
+/.appbuild/

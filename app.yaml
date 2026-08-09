@@ -1,0 +1,16 @@
+# Databricks Apps runtime configuration.
+# The deploy script copies this into the assembled standalone bundle, so the
+# platform runs the prebuilt Next.js server directly — no npm install or
+# build inside the 10-minute startup window.
+command:
+  - sh
+  - -c
+  - PORT=$DATABRICKS_APP_PORT HOSTNAME=0.0.0.0 node server.js
+
+env:
+  # Injected from the app resource declared in databricks.yml; the platform
+  # also auto-grants the app's service principal CAN_QUERY on it.
+  - name: DATABRICKS_SERVING_ENDPOINT
+    valueFrom: serving-endpoint
+  - name: NODE_ENV
+    value: production
