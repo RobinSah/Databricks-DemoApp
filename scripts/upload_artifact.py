@@ -95,7 +95,12 @@ def main() -> None:
         for name in filenames:
             if name == ".DS_Store":
                 continue
-            files.append(os.path.join(dirpath, name))
+            path = os.path.join(dirpath, name)
+            # Standalone builds leave symlinks into node_modules, which we
+            # deliberately don't ship — skip anything that isn't a real file.
+            if not os.path.isfile(path) or os.path.islink(path):
+                continue
+            files.append(path)
     files.sort()
     total = len(files)
     print(f"Uploading {total} files to {workspace_root} (sequential)")
