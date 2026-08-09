@@ -42,7 +42,8 @@ test.beforeEach(async ({ page }) => {
 test("streams a text reply for a general question", async ({ page }) => {
   await sendMessage(page, "Hello there!");
 
-  await expect(page.getByText("Hello there!")).toBeVisible();
+  // Scoped to the transcript: the text also appears as the sidebar title.
+  await expect(page.getByTestId("user-message").getByText("Hello there!")).toBeVisible();
   await expect(page.getByText(/running in mock mode/)).toBeVisible({ timeout: 15_000 });
 });
 

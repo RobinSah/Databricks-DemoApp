@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { RENDER_CHART_ACTION } from "@/lib/chat-contract";
+import { RENDER_CHART_ACTION, SEARCH_WEB_ACTION } from "@/lib/chat-contract";
 import { getLlmProvider } from "@/lib/llm";
 
 /**
@@ -41,6 +41,7 @@ const COUNTRY_PATTERNS: [RegExp, string][] = [
   [/\bgermany\b/i, "DEU"],
   [/\bkenya\b/i, "KEN"],
   [/\bunited kingdom\b|\buk\b/i, "GBR"],
+  [/\bnepal\b/i, "NPL"],
 ];
 
 const INDICATOR_PATTERNS: [RegExp, string][] = [
@@ -63,16 +64,21 @@ export async function POST(request: NextRequest): Promise<Response> {
   const messages = body.messages ?? [];
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const hasToolResult = messages.some((m) => m.role === "tool");
-  const chartToolOffered = (body.tools ?? []).some(
-    (t) => t.function?.name === RENDER_CHART_ACTION,
+  const offeredTools = new Set(
+    (body.tools ?? []).map((t) => t.function?.name).filter(Boolean),
   );
 
   if (hasToolResult) {
+    const usedSearch = messages.some(
+      (m) => typeof m.content === "string" && m.role === "tool" && m.content.includes('"url"'),
+    );
     return streamResponse(
       textChunks(
-        "Here is the chart with real World Bank data. " +
-          "The overall trend is clearly visible across the selected period. " +
-          "(mock summary)",
+        usedSearch
+          ? "According to the sources shown above, here is a short factual summary. (mock summary)"
+          : "Here is the chart with real World Bank data. " +
+              "The overall trend is clearly visible across the selected period. " +
+              "(mock summary)",
       ),
     );
   }
@@ -80,7 +86,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const prompt = typeof lastUser?.content === "string" ? lastUser.content : "";
   const indicator = INDICATOR_PATTERNS.find(([re]) => re.test(prompt))?.[1];
 
-  if (indicator && chartToolOffered) {
+  if (indicator && offeredTools.has(RENDER_CHART_ACTION)) {
     const countries = COUNTRY_PATTERNS.filter(([re]) => re.test(prompt)).map(([, code]) => code);
     const years = prompt.match(/\b(?:19|20)\d{2}\b/g)?.map(Number) ?? [];
     const args = {
@@ -90,6 +96,13 @@ export async function POST(request: NextRequest): Promise<Response> {
       endYear: years[1] ?? 2023,
     };
     return streamResponse(toolCallChunks(RENDER_CHART_ACTION, JSON.stringify(args)));
+  }
+
+  const wantsSearch = /\b(search|look up|who is|what is|latest|news|tell me about)\b/i.test(prompt);
+  if (wantsSearch && offeredTools.has(SEARCH_WEB_ACTION)) {
+    return streamResponse(
+      toolCallChunks(SEARCH_WEB_ACTION, JSON.stringify({ query: prompt.slice(0, 120) })),
+    );
   }
 
   return streamResponse(
@@ -146,10 +159,12 @@ function streamResponse(chunks: object[]): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // Tunable so state-dependent E2E assertions (stop button, typing
+      // indicator) have a comfortable window while the stream is live.
+      const delayMs = Number(process.env.MOCK_STREAM_DELAY_MS ?? 15);
       for (const c of chunks) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(c)}\n\n`));
-        // Small delay so the UI visibly streams, as a real model would.
-        await new Promise((resolve) => setTimeout(resolve, 15));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();

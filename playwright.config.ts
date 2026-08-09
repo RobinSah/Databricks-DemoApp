@@ -40,7 +40,9 @@ export default defineConfig({
     : {
         command: "npm run build && npm run start",
         url: `http://127.0.0.1:${PORT}/api/health`,
-        env: { LLM_PROVIDER: "mock", PORT: String(PORT) },
+        // The stream throttle gives state-dependent assertions (stop button,
+        // typing indicator) a stable window while responses are in flight.
+        env: { LLM_PROVIDER: "mock", PORT: String(PORT), MOCK_STREAM_DELAY_MS: "60" },
         reuseExistingServer: !process.env.CI,
         timeout: 240_000,
         stdout: "pipe",
