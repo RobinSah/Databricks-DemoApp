@@ -36,11 +36,34 @@ cp app.yaml .appbuild/app.yaml
 # API (persistent mkdirs timeouts). The platform runs `npm install` at
 # startup from package.json instead, so ship a runtime-deps-only manifest —
 # the standalone server resolves the same packages from the fresh install.
+#
+# One wrinkle: Turbopack externalizes some packages (pino, shiki, …) under
+# hashed alias names, satisfied by symlinks in .next/node_modules that the
+# workspace can't store. Recreate each alias as an npm package alias
+# ("pino-<hash>": "npm:pino@x.y.z") so the startup install materializes the
+# exact names the server chunks require — subpaths included.
 rm -rf .appbuild/node_modules
 node -e "
+const fs = require('fs');
+const path = require('path');
 const p = require('./package.json');
-const runtime = { name: p.name, version: p.version, private: true, dependencies: p.dependencies };
-require('fs').writeFileSync('.appbuild/package.json', JSON.stringify(runtime, null, 2) + '\n');
+const deps = { ...p.dependencies };
+
+const aliasDir = '.appbuild/.next/node_modules';
+if (fs.existsSync(aliasDir)) {
+  for (const entry of fs.readdirSync(aliasDir)) {
+    const full = path.join(aliasDir, entry);
+    if (!fs.lstatSync(full).isSymbolicLink()) continue;
+    const realName = path.basename(fs.readlinkSync(full));
+    const version = require(path.join(process.cwd(), 'node_modules', realName, 'package.json')).version;
+    deps[entry] = 'npm:' + realName + '@' + version;
+    fs.rmSync(full);
+    console.log('aliased ' + entry + ' -> ' + realName + '@' + version);
+  }
+}
+
+const runtime = { name: p.name, version: p.version, private: true, dependencies: deps };
+fs.writeFileSync('.appbuild/package.json', JSON.stringify(runtime, null, 2) + '\n');
 "
 
 # Local .env files must never reach the workspace.
