@@ -49,8 +49,10 @@ function ChatSurface() {
 }
 
 export default function Home() {
+  // showDevConsole={false} suppresses CopilotKit's dev banner, which otherwise
+  // overlays product announcements on top of our header.
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit">
+    <CopilotKit runtimeUrl="/api/copilotkit" showDevConsole={false}>
       <ConversationsProvider>
         <div className="flex h-dvh flex-col">
           <AppHeader />

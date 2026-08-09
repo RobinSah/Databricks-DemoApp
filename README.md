@@ -6,6 +6,10 @@ Deployed as a **Databricks App**, powered by **Databricks Foundation Model APIs*
 
 **Features**: streaming chat with typing indicator and stop-generation · multi-conversation history (new/switch/delete, survives reloads) · in-chat charts from live World Bank data · web search with cited sources rendered in-chat · dark mode · responsive (desktop sidebar / mobile sheet) · deterministic E2E suite covering all of it
 
+![Atlas rendering a live World Bank chart with a grounded summary](docs/screenshot.png)
+
+*Real output: the model called the chart tool, the app fetched live World Bank data, and every figure in the summary comes from the series it received.*
+
 ## Stack
 
 | Layer | Choice | Notes |
@@ -97,6 +101,24 @@ E2E_BASE_URL=https://<app-url> npx playwright test   # against a deployed app
 ```
 
 Builds, assembles the standalone bundle into `.appbuild/`, verifies file-size limits, deploys via a [Databricks Asset Bundle](databricks.yml), and starts the app. The bundle declares the serving endpoint as an app resource, so the platform auto-grants the app's service principal `CAN_QUERY` — no manual permission steps.
+
+### Platform behaviors worth knowing
+
+Four constraints shaped the deploy script. All were found by hitting them, and each is commented at the relevant line.
+
+**The workspace-files API can't absorb concurrent uploads.** `databricks sync` uploads in parallel and, on Free Edition, fails with `unexpected EOF` and 60-second inactivity timeouts — it never converged across 25 retry passes. Measured sequentially, the same API served 784 files at ~250 ms each with a 100% success rate, and the CLI exposes no concurrency flag. Hence [scripts/upload_artifact.py](scripts/upload_artifact.py), which uploads one file at a time. Three smaller quirks live in that script too: `import-file` does not create parent directories (so a `mkdirs` pass runs first), it rejects double-slash paths, and `.databricks` is a reserved name the API refuses.
+
+**Don't ship `node_modules`.** ~2,000 extra files reliably exhausted the upload path. The artifact ships the built app only, with a runtime-dependencies-only `package.json`; the platform runs `npm install` at startup. Next.js standalone output also leaves dangling symlinks into `node_modules`, which the uploader skips.
+
+**Scoped tokens can't read bundle state.** A PAT without the `all-apis` scope gets 403 on the bundle state file, so app-code deploys go through `databricks sync` + `databricks apps deploy --source-code-path` rather than pure bundle deploys. The bundle still owns resource creation and grants.
+
+**Free Edition app compute is not persistent.** Idle apps are stopped with *"App compute was stopped due to workspace or account status."* Restarting compute is not enough on its own: the active deployment reference is cleared too, so the app reports *"App has not been deployed yet"* until a fresh deploy runs. The uploaded source survives in the workspace, so recovery is a redeploy rather than a re-upload:
+
+```bash
+databricks apps start atlas-insights
+```
+
+`apps start` creates its own deployment from the last source path, so watch that deployment rather than issuing a second `apps deploy` (which is rejected while one is pending).
 
 ## Deliberately out of scope
 

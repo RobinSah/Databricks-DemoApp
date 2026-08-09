@@ -139,3 +139,12 @@
   --copilot-kit-separator-color: var(--border);
   --copilot-kit-muted-color: var(--muted-foreground);
 }
+/*
+ * CopilotKit ships a floating web-inspector widget (a shadow-DOM custom
+ * element) that renders a dev toolbar button and vendor product
+ * announcements over the app chrome. Useful while developing against the
+ * SDK, not something to show users of a deployed product.
+ */
+cpk-web-inspector {
+  display: none;
+}
