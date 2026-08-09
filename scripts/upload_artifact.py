@@ -52,7 +52,9 @@ def api_post_json(host: str, token: str, endpoint: str, payload: dict) -> None:
 
 
 def upload_file(host: str, token: str, local_path: str, workspace_path: str) -> None:
-    encoded = urllib.parse.quote(workspace_path, safe="")
+    # Encode without the leading slash: the endpoint 400s ("Bad url") on the
+    # resulting double slash if it's kept.
+    encoded = urllib.parse.quote(workspace_path.lstrip("/"), safe="")
     url = f"{host}/api/2.0/workspace-files/import-file/{encoded}?overwrite=true"
     with open(local_path, "rb") as fh:
         body = fh.read()
