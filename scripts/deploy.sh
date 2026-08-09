@@ -32,9 +32,16 @@ cp -R .next/static .appbuild/.next/static
 cp -R public .appbuild/public
 cp app.yaml .appbuild/app.yaml
 
-# sharp's platform-native binaries exceed the 10 MB per-file limit and are
-# unused (images.unoptimized in next.config.ts).
-rm -rf .appbuild/node_modules/sharp .appbuild/node_modules/@img
+# Don't ship node_modules: ~2k small files overwhelm the workspace-files
+# API (persistent mkdirs timeouts). The platform runs `npm install` at
+# startup from package.json instead, so ship a runtime-deps-only manifest —
+# the standalone server resolves the same packages from the fresh install.
+rm -rf .appbuild/node_modules
+node -e "
+const p = require('./package.json');
+const runtime = { name: p.name, version: p.version, private: true, dependencies: p.dependencies };
+require('fs').writeFileSync('.appbuild/package.json', JSON.stringify(runtime, null, 2) + '\n');
+"
 
 # Local .env files must never reach the workspace.
 find .appbuild -maxdepth 1 -name ".env*" -delete
